@@ -115,7 +115,7 @@ generation_t = (generation > .8).astype(np.uint8)
 mask = generation_t
 
 
-netG = _netG(opt, mask)
+netG = _netG(opt)
 # Loading the trained state into the generator t
 netG.load_state_dict(torch.load(opt.netG,map_location=lambda storage, location: storage)['state_dict'])
 netG.eval()
@@ -181,7 +181,7 @@ input_cropped.data[:,:, mask==1] = 1.0
 # input_cropped.data[:,2,x1:x2,y1:y2] = 1.0
         
 # Generate a fake image using a cropped input
-fake = netG(input_cropped)
+fake = netG(input_cropped, mask)
 
 # Error of the Generator 
 errG = criterionMSE(fake,input_real)

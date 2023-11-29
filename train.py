@@ -204,7 +204,7 @@ def weights_init(m):
 
 resume_epoch=0
 
-netG = _netG(opt, mask)
+netG = _netG(opt)
 
 netG.apply(weights_init)
 if opt.netG != '':
@@ -254,7 +254,30 @@ optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
 for epoch in range(resume_epoch,opt.niter):
+    shape_mask = (128, 128) # Size of the masks. Use powers of 2.
+    num_masks = opt.niter
+    # num_masks = opt.niter # Num of different masks
+    persistance = .4 # Controls the smoothness of the stains' boundaries. Should be float > 0. In practice, < 1
+    threshold = .8 # More or less controls the area of the stains 
+
+    # Mask generation
+    output_size = (num_masks, shape_mask[0], shape_mask[1])
+    generator = torch.Generator()
+    generator.manual_seed(0)
+
+    octaves = 5 # Controls level of detail. Should be integer 1-9, depending on the mask shape
+    resolutions = [(2 ** i, 2 ** i) for i in range(1, octaves + 1)]
+    factors = [persistance ** i for i in range(octaves)]
+    fp = pyperlin.FractalPerlin2D(output_size, resolutions, factors, generator=generator)
+    noise = fp().numpy()
+        
     for i, data in enumerate(dataloader, 0):
+        generation = noise[i]
+        generation = generation - np.min(generation)
+        generation = generation/np.max(generation)
+        generation_t = (generation > .8).astype(np.uint8)
+        mask = generation_t
+            
         real_cpu, _ = data
         # real_center_cpu = real_cpu[:,:,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)]
         # real_center_cpu = real_cpu[:,:,x1:x2,y1:y2]
@@ -291,7 +314,7 @@ for epoch in range(resume_epoch,opt.niter):
     # train with fake
     # noise.data.resize_(batch_size, nz, 1, 1)
     # noise.data.normal_(0, 1)
-    fake = netG(input_cropped)
+    fake = netG(input_cropped, mask)
     label.data.fill_(fake_label)
     output = netD(fake.detach())
     errD_fake = criterion(output.squeeze(1), label)

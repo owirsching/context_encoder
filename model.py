@@ -4,14 +4,12 @@ import pyperlin
 import numpy as np
 
 class _netG(nn.Module):
-    def __init__(self, opt, mask):
+    def __init__(self, opt):
         # Initializes the network
         super(_netG, self).__init__()
 
         # I'm guessing this initializes the GPU
         self.ngpu = opt.ngpu
-        
-        self.mask = mask
 
         # This is the neural network 
         self.main = nn.Sequential(
@@ -63,17 +61,16 @@ class _netG(nn.Module):
             nn.ConvTranspose2d(opt.ngf * 2, opt.nc, 4, 2, 1, bias=False),
             nn.Tanh()
             
-            
         )
 
-    def forward(self, input):
+    def forward(self, input, mask):
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
         else:
             output = self.main(input)
             img = input.clone()
             # replacing hole with output in location of the mask
-            img[:,:,self.mask==1] = output[:,:,self.mask==1]
+            img[:,:,mask==1] = output[:,:,mask==1]
         return img
     
 
