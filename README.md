@@ -1,5 +1,8 @@
-# context_encoder
-Context Encoder for Image Inpainting using Pytorch
+# Image Inpainting GAN for Art Restoration using Context Encoders
+### Using Pytorch
+
+The problem of Image Inpainting aims to reconstruct missing parts of images. For this Independent Study, I have analyzed the Image Inpainting task to restore damaged artwork. I chose art restoration as my area of focus based on my previous coursework studying medieval art when I studied abroad in Siena, Italy. Much of the art produced during that period was made with fragile plaster, which is subject to damage over time. I was inspired by the damaged sections of art to tackle the problem using deep learning. 
+
 
 ## Results
 Based On: https://github.com/BoyuanJiang/context_encoder_pytorch/tree/master
