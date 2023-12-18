@@ -1,14 +1,13 @@
 import torch
 import torch.nn as nn
 import pyperlin
-import numpy as np
+import numpy as np    
 
 class _netG(nn.Module):
     def __init__(self, opt):
         # Initializes the network
         super(_netG, self).__init__()
 
-        # I'm guessing this initializes the GPU
         self.ngpu = opt.ngpu
 
         # This is the neural network 
@@ -108,6 +107,4 @@ class _netlocalD(nn.Module):
             output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
         else:
             output = self.main(input)
-
         return output.view(-1, 1)
-
