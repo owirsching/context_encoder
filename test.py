@@ -45,6 +45,11 @@ parser.add_argument('--wtl2',type=float,default=0.999,help='0 means do not use e
 opt = parser.parse_args()
 print(opt)
 
+###############################################
+###              MASK OPTIONS               ###
+### Uncomment the masks to use for testing  ###
+###############################################
+
 # RANDOM RECTANGLE
 # x_one = np.random.randint(1, 128)
 # x_two = np.random.randint(1, 128)
@@ -76,45 +81,43 @@ print(opt)
 
 # mask = np.zeros((128, 128))
 # mask[x1:x2, y1:y2] = 1
-# mask[int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)] = 1
-
-
-# CIRCLE MASK
-# mask = np.zeros((128, 128))
-# center_x = 64
-# center_y = 64
-# r = 20
-
-# for i in range(128):
-#     for j in range(128):
-#         if (i - center_x)**2 + (j - center_y)**2 < r**2:
-#             mask[i][j] = 1
             
 # RANDOM MASK
-shape_mask = (128, 128) # Size of the masks. Use powers of 2.
-num_masks = 1 # Num of different masks
-persistance = .4 # Controls the smoothness of the stains' boundaries. Should be float > 0. In practice, < 1
-threshold = .8 # More or less controls the area of the stains 
+# shape_mask = (128, 128) # Size of the masks. Use powers of 2.
+# num_masks = 1 # Num of different masks
+# persistance = .4 # Controls the smoothness of the stains' boundaries. Should be float > 0. In practice, < 1
+# threshold = .8 # More or less controls the area of the stains 
 
-# Mask generation
-output_size = (num_masks, shape_mask[0], shape_mask[1])
-generator = torch.Generator()
-generator.manual_seed(0)
+# # Mask generation
+# output_size = (num_masks, shape_mask[0], shape_mask[1])
+# generator = torch.Generator()
+# generator.manual_seed(0)
 
-octaves = 5 # Controls level of detail. Should be integer 1-9, depending on the mask shape
-resolutions = [(2 ** i, 2 ** i) for i in range(1, octaves + 1)]
-factors = [persistance ** i for i in range(octaves)]
-fp = pyperlin.FractalPerlin2D(output_size, resolutions, factors, generator=generator)
-noise = fp().numpy()
+# octaves = 5 # Controls level of detail. Should be integer 1-9, depending on the mask shape
+# resolutions = [(2 ** i, 2 ** i) for i in range(1, octaves + 1)]
+# factors = [persistance ** i for i in range(octaves)]
+# fp = pyperlin.FractalPerlin2D(output_size, resolutions, factors, generator=generator)
+# noise = fp().numpy()
 
+# mask = np.zeros((128, 128))
+# generation = noise[0]
+# generation = generation - np.min(generation)
+# generation = generation/np.max(generation)
+# generation_t = (generation > .8).astype(np.uint8)
+# mask = generation_t
+
+# CIRCLE MASK
 mask = np.zeros((128, 128))
-generation = noise[0]
-generation = generation - np.min(generation)
-generation = generation/np.max(generation)
-generation_t = (generation > .8).astype(np.uint8)
-mask = generation_t
+center_x = 64
+center_y = 64
+r = 20
 
+for i in range(128):
+    for j in range(128):
+        if (i - center_x)**2 + (j - center_y)**2 < r**2:
+            mask[i][j] = 1
 
+# Initialize generator 
 netG = _netG(opt)
 # Loading the trained state into the generator t
 netG.load_state_dict(torch.load(opt.netG,map_location=lambda storage, location: storage)['state_dict'])
@@ -130,14 +133,10 @@ assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
 
-# create tensors
-# Why float tensor?
-# What are the arguments? 
+ 
 input_real = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 input_cropped = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 
-# CHANGED
-# real_center = torch.FloatTensor(int(opt.batchSize), 3, x2-x1, y2-y1)
 
 # Defining the MSE loss 
 criterionMSE = nn.MSELoss()
@@ -150,10 +149,8 @@ if opt.cuda:
     # real_center = real_center.cuda()
 
 # Creating variables 
-# Variables hold the data for gradients ??
 input_real = Variable(input_real)
 input_cropped = Variable(input_cropped)
-# real_center = Variable(real_center)
 
 # Creating an iterable for the data
 dataiter = iter(dataloader)
@@ -163,22 +160,8 @@ real_cpu, _ = next(dataiter)
 input_real.data.resize_(real_cpu.size()).copy_(real_cpu)
 input_cropped.data.resize_(real_cpu.size()).copy_(real_cpu)
 
-# real_center_cpu = real_cpu[:,:,x1:x2,y1:y2]
-# real_center_cpu = real_cpu[:,:,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)]
-# real_center.data.resize_(real_center_cpu.size()).copy_(real_center_cpu)
-
-# Taking out the rectangle 
-# input_cropped.data[:,0,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)] = 1.0
-# input_cropped.data[:,1,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)] = 1.0
-# input_cropped.data[:,2,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)] = 1.0
-
-
+# Cropping image with the mask 
 input_cropped.data[:,:, mask==1] = 1.0
-
-# RECTANLGES
-# input_cropped.data[:,0,x1:x2,y1:y2] = 1.0
-# input_cropped.data[:,1,x1:x2,y1:y2] = 1.0
-# input_cropped.data[:,2,x1:x2,y1:y2] = 1.0
         
 # Generate a fake image using a cropped input
 fake = netG(input_cropped, mask)
@@ -187,11 +170,7 @@ fake = netG(input_cropped, mask)
 errG = criterionMSE(fake,input_real)
 
 # Reconstructed image is a clone of the cropped image 
-# recon_image = real_cpu.clone()
 recon_image = fake.clone()
-
-# Fill in the reconstructed image with the fake data
-# recon_image.data[:,:,x1:x2,x1:x2] = fake.data[:,:,x1:x2,x1:x2]
 
 # Save image results
 vutils.save_image(real_cpu,'val_real_samples.png',normalize=True)
@@ -220,6 +199,3 @@ print(l2)
 print(l1)
 
 print(p/opt.batchSize)
-
-
-
