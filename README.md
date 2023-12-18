@@ -29,3 +29,6 @@ To Train
 To Test 
 
 `python3 test.py --netG model/netG_streetview.pth --dataroot dataset/val --batchSize 100`
+
+## Loss
+`my_plot.png` plots the losses for the generator, discriminator on fake images, and discriminator on real images. 
