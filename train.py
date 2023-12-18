@@ -15,6 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torchsummary import summary 
 import pyperlin
+from utils import generate_masks
 
 from model import _netlocalD,_netG
 import utils
@@ -50,6 +51,10 @@ parser.add_argument('--wtlD',type=float,default=0.001,help='0 means do not use e
 opt = parser.parse_args()
 print(opt)
 
+###############################################
+###              MASK OPTIONS               ###
+### Uncomment the masks to use for training ###
+###############################################
 
 # RANDOM RECTANGLES
 # x_one = np.random.randint(1, 128)
@@ -82,43 +87,17 @@ print(opt)
 
 # mask = np.zeros((128, 128))
 # mask[x1:x2, y1:y2] = 1
-# mask[int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)] = 1
-
 
 # CIRCLE MASK
-# mask = np.zeros((128, 128))
-# center_x = 64
-# center_y = 64
-# r = 20
-# for i in range(128):
-#     for j in range(128):
-#         if (i - center_x)**2 + (j - center_y)**2 < r**2:
-#             mask[i][j] = 1          
+mask = np.zeros((128, 128))
+center_x = 64
+center_y = 64
+r = 20
+for i in range(128):
+    for j in range(128):
+        if (i - center_x)**2 + (j - center_y)**2 < r**2:
+            mask[i][j] = 1 
 
-
-# CREATE RANDOM MASK
-shape_mask = (128, 128) # Size of the masks. Use powers of 2.
-num_masks = 1
-# num_masks = opt.niter # Num of different masks
-persistance = .4 # Controls the smoothness of the stains' boundaries. Should be float > 0. In practice, < 1
-threshold = .8 # More or less controls the area of the stains 
-
-# Mask generation
-output_size = (num_masks, shape_mask[0], shape_mask[1])
-generator = torch.Generator()
-generator.manual_seed(0)
-
-octaves = 5 # Controls level of detail. Should be integer 1-9, depending on the mask shape
-resolutions = [(2 ** i, 2 ** i) for i in range(1, octaves + 1)]
-factors = [persistance ** i for i in range(octaves)]
-fp = pyperlin.FractalPerlin2D(output_size, resolutions, factors, generator=generator)
-noise = fp().numpy()
-
-generation = noise[0]
-generation = generation - np.min(generation)
-generation = generation/np.max(generation)
-generation_t = (generation > .8).astype(np.uint8)
-mask = generation_t
 
 # Making Directories for Results
 try:
@@ -204,6 +183,7 @@ def weights_init(m):
 
 resume_epoch=0
 
+# Initializes generator 
 netG = _netG(opt)
 
 netG.apply(weights_init)
@@ -223,15 +203,12 @@ print(netD)
 criterion = nn.BCELoss()
 criterionMSE = nn.MSELoss()
 
-# What is a Float Tensor?
 input_real = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 input_cropped = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 label = torch.FloatTensor(opt.batchSize)
 real_label = 1
 fake_label = 0
 
-# CHANGED
-# real_center = torch.FloatTensor(opt.batchSize, 3, x2-x1, y2-y1)
 
 if opt.cuda:
     netD.cuda()
@@ -239,7 +216,6 @@ if opt.cuda:
     criterion.cuda()
     criterionMSE.cuda()
     input_real, input_cropped,label = input_real.cuda(),input_cropped.cuda(), label.cuda()
-    # real_center = real_center.cuda()
 
 
 input_real = Variable(input_real)
@@ -247,82 +223,58 @@ input_cropped = Variable(input_cropped)
 label = Variable(label)
 
 
-# real_center = Variable(real_center)
-
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
+x_axis = []
+errD_fake_list = []
+errD_real_list = []
+errG_list = []
+
+ind = 0
+
+
 for epoch in range(resume_epoch,opt.niter):
-    shape_mask = (128, 128) # Size of the masks. Use powers of 2.
-    num_masks = opt.niter
-    # num_masks = opt.niter # Num of different masks
-    persistance = .4 # Controls the smoothness of the stains' boundaries. Should be float > 0. In practice, < 1
-    threshold = .8 # More or less controls the area of the stains 
-
-    # Mask generation
-    output_size = (num_masks, shape_mask[0], shape_mask[1])
-    generator = torch.Generator()
-    generator.manual_seed(0)
-
-    octaves = 5 # Controls level of detail. Should be integer 1-9, depending on the mask shape
-    resolutions = [(2 ** i, 2 ** i) for i in range(1, octaves + 1)]
-    factors = [persistance ** i for i in range(octaves)]
-    fp = pyperlin.FractalPerlin2D(output_size, resolutions, factors, generator=generator)
-    noise = fp().numpy()
-        
     for i, data in enumerate(dataloader, 0):
-        generation = noise[i]
-        generation = generation - np.min(generation)
-        generation = generation/np.max(generation)
-        generation_t = (generation > .8).astype(np.uint8)
-        mask = generation_t
-            
         real_cpu, _ = data
-        # real_center_cpu = real_cpu[:,:,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)]
-        # real_center_cpu = real_cpu[:,:,x1:x2,y1:y2]
         batch_size = real_cpu.size(0)
         input_real.data.resize_(real_cpu.size()).copy_(real_cpu)
-
+        
+        # For training on fixed mask 
         input_cropped.data.resize_(real_cpu.size()).copy_(real_cpu)
         input_cropped.data[:,:, mask==1] = 1.0
-        # real_center.data.resize_(real_center_cpu.size()).copy_(real_center_cpu)
 
-        # RECTANGLES 
-        # input_cropped.data[:,0,x1:x2,y1:y2] = 1.0
-        # input_cropped.data[:,1,x1:x2,y1:y2] = 1.0
-        # input_cropped.data[:,2,x1:x2,y1:y2] = 1.0
+        # For training on random masks
+        # Comment the two above lines and uncomment the lines below for random masks 
+#         masks = generate_masks(opt.batchSize, (128,128))
+#         for i, mask in enumerate(masks):
+            
+#             input_cropped.data.resize_(real_cpu.size()).copy_(real_cpu)
+#             input_cropped.data[i, :, mask == 1]
 
-
-    # input_cropped.data[:,0,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)] = 1.0
-    # input_cropped.data[:,1,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)] = 1.0
-    # input_cropped.data[:,2,int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4+opt.imageSize/2)] = 1.0
-
-        # train with real
     netD.zero_grad()
-        # print("Discriminator")
-        # summary(netD, (3, 128, 128))
-       
-        # labeling every image in the batch 
+
+    # Labeling every image in the batch 
     label.data.resize_(batch_size).fill_(real_label)
 
+    # Discriminator takes real input
     output = netD(input_real)
     errD_real = criterion(output.squeeze(1), label)
     errD_real.backward()
     D_x = output.data.mean()
 
-    # train with fake
-    # noise.data.resize_(batch_size, nz, 1, 1)
-    # noise.data.normal_(0, 1)
+    # Generate fake
     fake = netG(input_cropped, mask)
     label.data.fill_(fake_label)
+    
+    # Discriminator takes fake input
     output = netD(fake.detach())
     errD_fake = criterion(output.squeeze(1), label)
     errD_fake.backward()
     D_G_z1 = output.data.mean()
     errD = errD_real + errD_fake
     optimizerD.step()
-
 
     ############################
     # (2) Update G network: maximize log(D(G(z)))
@@ -331,15 +283,6 @@ for epoch in range(resume_epoch,opt.niter):
     label.data.fill_(real_label)  # fake labels are real for generator cost
     output = netD(fake)
     errG_D = criterion(output.squeeze(1), label)
-    # errG_D.backward(retain_variables=True)
-
-    # errG_l2 = criterionMSE(fake,real_center)
-    
-    # CHANGED
-    # Increases the weight of pixels around the border
-    # wtl2Matrix = input_real.clone()
-    # wtl2Matrix.data.fill_(wtl2*overlapL2Weight)
-    # wtl2Matrix.data[:,:,int(opt.overlapPred):int((x2-x1)- opt.overlapPred),int(opt.overlapPred):int((y2-y1) - opt.overlapPred)] = wtl2
 
     errG_l2 = (fake-input_real).pow(2)
     errG_l2 = errG_l2 * torch.Tensor(mask).to("cuda")
@@ -349,9 +292,14 @@ for epoch in range(resume_epoch,opt.niter):
 
     errG.backward()
 
-    # Not used 
-    # D_G_z2 = output.data.mean()
     optimizerG.step()
+
+    # Update error lists for plotting errors 
+    ind += 1
+    x_axis.append(ind)
+    errD_real_list.append(errD_real)
+    errD_fake_list.append(errD_fake)
+    errG_list.append(errG)
 
     print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f / %.4f l_D(x): %.4f l_D(G(z)): %.4f'
           % (epoch, opt.niter, i, len(dataloader),
@@ -374,3 +322,23 @@ for epoch in range(resume_epoch,opt.niter):
     torch.save({'epoch':epoch+1,
                 'state_dict':netD.state_dict()},
                 'model/netlocalD.pth' )
+
+# create error graph 
+axis = x_axis
+cpu_errD_real = torch.Tensor(errD_fake_list).detach().cpu().tolist()
+cpu_errD_fake = torch.Tensor(errD_real_list).detach().cpu().tolist()
+cpu_errG = torch.Tensor(errG_list).detach().cpu().tolist()
+
+fig, ax = plt.subplots()
+errD_fake_plt = ax.plot(x_axis, cpu_errD_real, label="D Loss Real")
+errD_real_plt = ax.plot(x_axis, cpu_errD_fake, label="D Loss Fake")
+errG_plt = ax.plot(x_axis, cpu_errG, label="G Loss")
+ax.legend()
+plt.savefig('my_plot.png')
+
+print("cpu_errD_real ")
+print(cpu_errD_real)
+print("cpu_errD_fake ")
+print(cpu_errD_fake)
+print("cpu_errG ")
+print(cpu_errG)
